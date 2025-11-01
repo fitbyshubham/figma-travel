@@ -1,0 +1,91 @@
+# Supabase Configuration for Narfe
+
+project_id = "your-project-id"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.pooler]
+enabled = true
+port = 54329
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+[realtime]
+enabled = true
+port = 54323
+
+[studio]
+enabled = true
+port = 54324
+api_url = "http://localhost"
+
+[inbucket]
+enabled = true
+port = 54325
+smtp_port = 54326
+pop3_port = 54327
+
+[storage]
+enabled = true
+port = 54328
+file_size_limit = "100MiB"
+
+[storage.buckets.media]
+public = false
+file_size_limit = "100MiB"
+allowed_mime_types = ["image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4", "video/quicktime", "video/webm"]
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["https://narfe.world"]
+jwt_expiry = 3600
+enable_signup = true
+enable_anonymous_sign_ins = false
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+
+[auth.external.google]
+enabled = false
+client_id = ""
+secret = ""
+redirect_uri = ""
+
+[auth.external.github]
+enabled = false
+client_id = ""
+secret = ""
+redirect_uri = ""
+
+# Edge Functions
+[functions.createPurchase]
+verify_jwt = true
+
+[functions.stripeWebhook]
+verify_jwt = false # Stripe webhooks use signature verification
+
+[functions.createItinerary]
+verify_jwt = true
+
+[functions.generateEmbedding]
+verify_jwt = false # Called internally
+
+[functions.getFeed]
+verify_jwt = false # Can be called anonymously
+
+[functions.uploadSignedUrl]
+verify_jwt = true

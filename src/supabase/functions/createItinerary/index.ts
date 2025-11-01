@@ -1,0 +1,149 @@
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        global: {
+          headers: { Authorization: req.headers.get('Authorization')! },
+        },
+      }
+    );
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseClient.auth.getUser();
+
+    if (userError || !user) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const {
+      title,
+      description,
+      location,
+      country,
+      city,
+      duration,
+      category,
+      tags,
+      price,
+      currency = 'EUR',
+      coverImageUrl,
+      videoUrl,
+      stops,
+      status = 'draft',
+    } = await req.json();
+
+    if (!title || !location) {
+      return new Response(
+        JSON.stringify({ error: 'Title and location are required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
+    // Create itinerary
+    const { data: itinerary, error: itineraryError } = await supabaseAdmin
+      .from('itineraries')
+      .insert({
+        creator_id: user.id,
+        title,
+        description,
+        location,
+        country,
+        city,
+        duration,
+        category,
+        tags,
+        price: price || 0,
+        currency,
+        cover_image_url: coverImageUrl,
+        video_url: videoUrl,
+        status,
+        published_at: status === 'published' ? new Date().toISOString() : null,
+      })
+      .select()
+      .single();
+
+    if (itineraryError) {
+      console.error('Error creating itinerary:', itineraryError);
+      return new Response(
+        JSON.stringify({ error: 'Failed to create itinerary', details: itineraryError }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Create stops if provided
+    if (stops && Array.isArray(stops) && stops.length > 0) {
+      const stopsData = stops.map((stop: any) => ({
+        itinerary_id: itinerary.id,
+        day_number: stop.dayNumber || 1,
+        stop_order: stop.stopOrder || 1,
+        title: stop.title,
+        description: stop.description,
+        latitude: stop.latitude,
+        longitude: stop.longitude,
+        address: stop.address,
+        place_name: stop.placeName,
+        start_time: stop.startTime,
+        end_time: stop.endTime,
+        duration_minutes: stop.durationMinutes,
+        image_url: stop.imageUrl,
+      }));
+
+      const { error: stopsError } = await supabaseAdmin
+        .from('itinerary_stops')
+        .insert(stopsData);
+
+      if (stopsError) {
+        console.error('Error creating stops:', stopsError);
+        // Don't fail the entire request, just log the error
+      }
+    }
+
+    // Trigger embedding generation in background (if published)
+    if (status === 'published') {
+      // Call generateEmbedding function asynchronously
+      fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generateEmbedding`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        },
+        body: JSON.stringify({ itineraryId: itinerary.id }),
+      }).catch(err => console.error('Error triggering embedding generation:', err));
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, itinerary }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error('Error in createItinerary:', error);
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+});
